@@ -11,29 +11,34 @@ with open("Data/cleaned_all_datasets_shorten.json", "r", encoding="utf-8") as f:
 questions = [item["question"] for item in data]
 answers = [item["answer"] for item in data]
 
+# Buat embedding dari seluruh pertanyaan
 question_embeddings = embed_sentences(questions)
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 def respond(user_input):
-    # encode input
+    # Ubah input menjadi embedding
     input_embedding = model.encode(user_input, convert_to_tensor=True)
-
-    # cari pertanyaan yang paling mirip
-    similarities = util.cos_sim(input_embedding, question_embeddings)[0]
-    # Urutkan indeks jawaban berdasarkan similarity tinggi → rendah
-    top_indices = similarities.argsort(descending=True)
-
-    # Cari jawaban yang pendek & relevan
-    for idx in top_indices:
-        answer = answers[idx]
-        if len(answer.split()) <= 100:  # batas panjang
-            return answer
-
-    # Jika semua jawaban terlalu panjang
-    return "I'm still learning to answer that properly. Please ask something else."
     
+    # Hitung kemiripan input terhadap semua pertanyaan dataset
+    similarities = util.cos_sim(input_embedding, question_embeddings)[0]
+    
+    # Ambil index pertanyaan paling mirip → ini digunakan sebagai index state Q-table
+    best_state_idx = similarities.argmax().item()
 
-# Chat loop
+    # Cari index jawaban terbaik berdasarkan Q-table
+    best_action_idx = np.argmax(q_table[best_state_idx])
+    chosen_answer = answers[best_action_idx]
+
+    # Jika jawaban terlalu panjang, cari alternatif
+    if len(chosen_answer.split()) > 100:
+        for idx in np.argsort(q_table[best_state_idx])[::-1]:
+            if len(answers[idx].split()) <= 100:
+                return answers[idx]
+        return "I'm still learning to answer that properly. Please ask something else."
+
+    return chosen_answer
+
+# Loop Chat
 print("Chatbot siap. Ketik 'exit' untuk keluar.")
 while True:
     user_input = input("Kamu: ")
